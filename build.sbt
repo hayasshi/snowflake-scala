@@ -31,6 +31,15 @@ lazy val root = (project in file("."))
     akkaDynamoDb
   )
 
+lazy val core = (project in file("core"))
+  .settings(commonSettings)
+  .settings(
+    name := "snowflake-scala-core",
+    libraryDependencies ++= Seq(
+      scalaTest % Test
+    )
+  )
+
 lazy val akkaDynamoDb = (project in file("akka-dynamodb"))
   .settings(commonSettings)
   .settings(
