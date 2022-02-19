@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            java: 8
+          - os: ubuntu-latest
+            java: 11
+    runs-on: ${{ matrix.os }}
+    env:
+      SBT_OPTS:  -Xms2048M -Xmx2048M -Xss12M -XX:ReservedCodeCacheSize=256M
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Setup JDK
+        uses: actions/setup-java@v2
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - name: Setup build cache
+        uses: coursier/cache-action@v6
+      - name: Build and test
+        shell: bash
+        run: sbt -v +test

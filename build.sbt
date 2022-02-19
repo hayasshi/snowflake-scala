@@ -28,6 +28,7 @@ lazy val root = (project in file("."))
     name := "snowflake-scala"
   )
   .aggregate(
+    core,
     akkaDynamoDb
   )
 
