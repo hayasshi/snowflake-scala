@@ -15,6 +15,8 @@ jobs:
           - os: ubuntu-latest
             java: 11
     runs-on: ${{ matrix.os }}
+    env:
+      SBT_OPTS:  -Xms2048M -Xmx2048M -Xss12M -XX:ReservedCodeCacheSize=256M
     steps:
       - name: Checkout
         uses: actions/checkout@v2
