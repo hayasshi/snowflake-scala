@@ -207,7 +207,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     assert(actualItem == expectedItem)
   }
 
-  test("`keepAlive` can update item's expire time when same SessionId and does not expired") {
+  test("`heartbeat` can update item's expire time when same SessionId and does not expired") {
     val datacenterId     = testIdFormat.datacenterId(1L)
     val workerId         = testIdFormat.workerId(1L)
     val host             = "localhost"
@@ -219,8 +219,8 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
 
     val newSessionExpiredAt = sessionExpiredAt.plusSeconds(30.seconds.toSeconds)
     val actual =
-      operator.keepAlive(datacenterId, workerId, sessionId, newSessionExpiredAt).futureValue(1.seconds.timeout)
-    assert(actual == KeepAliveResult.Succeeded)
+      operator.heartbeat(datacenterId, workerId, sessionId, newSessionExpiredAt).futureValue(1.seconds.timeout)
+    assert(actual == HeartbeatResult.Succeeded)
 
     val expectedItem = assignItem.copy(sessionExpiredAt = newSessionExpiredAt)
     val actualItem = client
@@ -233,7 +233,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     assert(actualItem == expectedItem)
   }
 
-  test("`keepAlive` can not update item's expire time when assign state is not `Assign`") {
+  test("`heartbeat` can not update item's expire time when assign state is not `Assign`") {
     val datacenterId     = testIdFormat.datacenterId(1L)
     val workerId         = testIdFormat.workerId(1L)
     val host             = "localhost"
@@ -244,8 +244,8 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     client.putItem(PutItemRequest.builder().tableName(tableName).item(encode(item)).build()).get()
 
     val newSessionExpiredAt = sessionExpiredAt.plusSeconds(30.seconds.toSeconds)
-    operator.keepAlive(datacenterId, workerId, sessionId, newSessionExpiredAt).futureValue(1.seconds.timeout) match {
-      case KeepAliveResult.Failed(_: ConditionalCheckFailedException) => succeed
+    operator.heartbeat(datacenterId, workerId, sessionId, newSessionExpiredAt).futureValue(1.seconds.timeout) match {
+      case HeartbeatResult.Failed(_: ConditionalCheckFailedException) => succeed
       case x                                                          => fail(s"Illegal result: $x")
     }
 
@@ -260,7 +260,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     assert(actualItem == expectedItem)
   }
 
-  test("`keepAlive` can not update item's expire time when does not same SessionId") {
+  test("`heartbeat` can not update item's expire time when does not same SessionId") {
     val datacenterId     = testIdFormat.datacenterId(1L)
     val workerId         = testIdFormat.workerId(1L)
     val host             = "localhost"
@@ -273,9 +273,9 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     val newSessionExpiredAt = sessionExpiredAt.plusSeconds(30.seconds.toSeconds)
     val differentSessionId  = UUID.randomUUID()
     operator
-      .keepAlive(datacenterId, workerId, differentSessionId, newSessionExpiredAt)
+      .heartbeat(datacenterId, workerId, differentSessionId, newSessionExpiredAt)
       .futureValue(1.seconds.timeout) match {
-      case KeepAliveResult.Failed(_: ConditionalCheckFailedException) => succeed
+      case HeartbeatResult.Failed(_: ConditionalCheckFailedException) => succeed
       case x                                                          => fail(s"Illegal result: $x")
     }
 
@@ -290,7 +290,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     assert(actualItem == expectedItem)
   }
 
-  test("`keepAlive` can not update item's expire time when already expired") {
+  test("`heartbeat` can not update item's expire time when already expired") {
     val datacenterId     = testIdFormat.datacenterId(1L)
     val workerId         = testIdFormat.workerId(1L)
     val host             = "localhost"
@@ -301,8 +301,8 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     client.putItem(PutItemRequest.builder().tableName(tableName).item(encode(assignItem)).build()).get()
 
     val newSessionExpiredAt = sessionExpiredAt.plusSeconds(30.seconds.toSeconds)
-    operator.keepAlive(datacenterId, workerId, sessionId, newSessionExpiredAt).futureValue(1.seconds.timeout) match {
-      case KeepAliveResult.Failed(_: ConditionalCheckFailedException) => succeed
+    operator.heartbeat(datacenterId, workerId, sessionId, newSessionExpiredAt).futureValue(1.seconds.timeout) match {
+      case HeartbeatResult.Failed(_: ConditionalCheckFailedException) => succeed
       case x                                                          => fail(s"Illegal result: $x")
     }
 

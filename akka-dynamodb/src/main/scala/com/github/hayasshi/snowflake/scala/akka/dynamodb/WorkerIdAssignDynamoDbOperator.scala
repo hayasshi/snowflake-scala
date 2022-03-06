@@ -39,10 +39,10 @@ object AssignResult {
   case class Failed(cause: Throwable) extends AssignResult
 }
 
-sealed trait KeepAliveResult
-object KeepAliveResult {
-  case object Succeeded               extends KeepAliveResult
-  case class Failed(cause: Throwable) extends KeepAliveResult
+sealed trait HeartbeatResult
+object HeartbeatResult {
+  case object Succeeded               extends HeartbeatResult
+  case class Failed(cause: Throwable) extends HeartbeatResult
 }
 
 case class DecodingFailure(message: String, cause: Option[Throwable] = None) extends Exception(message, cause.orNull)
@@ -188,12 +188,12 @@ class WorkerIdAssignDynamoDbOperator(val client: DynamoDbAsyncClient, val tableN
       .recover(e => AssignResult.Failed(unwrapIfCompletionException(e)))
   }
 
-  def keepAlive(
+  def heartbeat(
       datacenterId: DatacenterId,
       workerId: WorkerId,
       sessionId: UUID,
       sessionExpiredAt: Instant
-  ): Future[KeepAliveResult] = {
+  ): Future[HeartbeatResult] = {
     val request = UpdateItemRequest
       .builder()
       .tableName(tableName)
@@ -214,8 +214,8 @@ class WorkerIdAssignDynamoDbOperator(val client: DynamoDbAsyncClient, val tableN
     client
       .updateItem(request)
       .asScala
-      .map(_ => KeepAliveResult.Succeeded)
-      .recover(e => KeepAliveResult.Failed(unwrapIfCompletionException(e)))
+      .map(_ => HeartbeatResult.Succeeded)
+      .recover(e => HeartbeatResult.Failed(unwrapIfCompletionException(e)))
   }
 
 }
