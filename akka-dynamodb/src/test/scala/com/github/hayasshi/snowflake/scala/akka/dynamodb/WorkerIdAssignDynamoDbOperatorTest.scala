@@ -1,6 +1,5 @@
 package com.github.hayasshi.snowflake.scala.akka.dynamodb
 
-import com.dimafeng.testcontainers.GenericContainer
 import com.github.hayasshi.snowflake.scala.core.IdFormat
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.concurrent.PatienceConfiguration.Timeout
@@ -10,7 +9,6 @@ import org.scalatest.time.{ Millis, Seconds, Span }
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import software.amazon.awssdk.services.dynamodb.model.*
 
-import java.net.URI
 import java.time.Instant
 import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -23,24 +21,13 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     def timeout: Timeout = Timeout(Span(duration.toMillis, Millis))
   }
 
-  val dynamoDbPortOrigin = 8000
-
-  val dynamoDbContainer: GenericContainer = GenericContainer(
-    "amazon/dynamodb-local:1.18.0",
-    exposedPorts = Seq(dynamoDbPortOrigin)
-  )
-  dynamoDbContainer.start()
-
-  val dynamoDbHost: String = dynamoDbContainer.containerIpAddress
-  val dynamoDbPort: Int    = dynamoDbContainer.mappedPort(dynamoDbPortOrigin)
+  val dynamoDbSupport                     = new DynamoDbLocalContainerSupport()
+  val dynamoDbClient: DynamoDbAsyncClient = dynamoDbSupport.client
 
   override def afterAll(): Unit = {
-    dynamoDbContainer.stop()
+    dynamoDbSupport.close()
     super.afterAll()
   }
-
-  val client: DynamoDbAsyncClient =
-    DynamoDbAsyncClient.builder().endpointOverride(URI.create(s"http://$dynamoDbHost:$dynamoDbPort")).build()
 
   val tableName = "TestTable"
 
@@ -58,18 +45,18 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
         KeySchemaElement.builder().keyType(KeyType.RANGE).attributeName(SortKeyName).build()
       )
       .build()
-    println(client.createTable(request).get())
+    println(dynamoDbClient.createTable(request).get())
   }
 
-  val operator = new WorkerIdAssignDynamoDbOperator(client, tableName)
+  val operator = new WorkerIdAssignDynamoDbOperator(dynamoDbClient, tableName)
 
   val testIdFormat: IdFormat = IdFormat.Default(Instant.EPOCH)
 
   test("`putForPreAssign` can put pre assign item when keys(PartitionKey and SortKey pair) is not exists") {
     val existsItem1 = createKeyMap(testIdFormat.datacenterId(1L), testIdFormat.workerId(2L))
     val existsItem2 = createKeyMap(testIdFormat.datacenterId(2L), testIdFormat.workerId(1L))
-    client.putItem(PutItemRequest.builder().tableName(tableName).item(existsItem1).build()).get()
-    client.putItem(PutItemRequest.builder().tableName(tableName).item(existsItem2).build()).get()
+    dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(existsItem1).build()).get()
+    dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(existsItem2).build()).get()
 
     val expectedItem = WorkerIdAssignItem(
       testIdFormat.datacenterId(1L),
@@ -92,7 +79,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
 
     assert(actual == PreAssignResult.Succeeded)
 
-    val actualItem = client
+    val actualItem = dynamoDbClient
       .getItem(
         GetItemRequest
           .builder()
@@ -110,7 +97,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
 
   test("`putForPreAssign` can not put pre assign item when keys(PartitionKey and SortKey pair) is exists") {
     val existsItem1 = createKeyMap(testIdFormat.datacenterId(1L), testIdFormat.workerId(1L))
-    client.putItem(PutItemRequest.builder().tableName(tableName).item(existsItem1).build()).get()
+    dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(existsItem1).build()).get()
 
     val actual = operator
       .putForPreAssign(
@@ -133,14 +120,14 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     val sessionExpiredAt = Instant.now().plusSeconds(1.minute.toSeconds)
     val preAssignItem =
       WorkerIdAssignItem(datacenterId, workerId, AssignState.PreAssign, host, sessionId, sessionExpiredAt)
-    client.putItem(PutItemRequest.builder().tableName(tableName).item(encode(preAssignItem)).build()).get()
+    dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(encode(preAssignItem)).build()).get()
 
     val actual =
       operator.updateForAssign(datacenterId, workerId, sessionId, sessionExpiredAt).futureValue(1.seconds.timeout)
     assert(actual == AssignResult.Succeeded)
 
     val expectedItem = preAssignItem.copy(state = AssignState.Assign)
-    val actualItem = client
+    val actualItem = dynamoDbClient
       .getItem(GetItemRequest.builder().tableName(tableName).key(createKeyMap(datacenterId, workerId)).build())
       .thenApply(_.item())
       .thenApply(item => WorkerIdAssignItem.decode(testIdFormat)(item))
@@ -158,7 +145,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     val sessionExpiredAt = Instant.now().plusSeconds(1.minute.toSeconds)
     val preAssignItem =
       WorkerIdAssignItem(datacenterId, workerId, AssignState.PreAssign, host, sessionId, sessionExpiredAt)
-    client.putItem(PutItemRequest.builder().tableName(tableName).item(encode(preAssignItem)).build()).get()
+    dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(encode(preAssignItem)).build()).get()
 
     val differentSessionId = UUID.randomUUID()
     operator
@@ -169,7 +156,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     }
 
     val expectedItem = preAssignItem
-    val actualItem = client
+    val actualItem = dynamoDbClient
       .getItem(GetItemRequest.builder().tableName(tableName).key(createKeyMap(datacenterId, workerId)).build())
       .thenApply(_.item())
       .thenApply(item => WorkerIdAssignItem.decode(testIdFormat)(item))
@@ -187,7 +174,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     val sessionExpiredAt = Instant.now().minusSeconds(1.minute.toSeconds)
     val preAssignItem =
       WorkerIdAssignItem(datacenterId, workerId, AssignState.PreAssign, host, sessionId, sessionExpiredAt)
-    client.putItem(PutItemRequest.builder().tableName(tableName).item(encode(preAssignItem)).build()).get()
+    dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(encode(preAssignItem)).build()).get()
 
     operator
       .updateForAssign(datacenterId, workerId, sessionId, Instant.now().plusSeconds(60L))
@@ -197,7 +184,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     }
 
     val expectedItem = preAssignItem
-    val actualItem = client
+    val actualItem = dynamoDbClient
       .getItem(GetItemRequest.builder().tableName(tableName).key(createKeyMap(datacenterId, workerId)).build())
       .thenApply(_.item())
       .thenApply(item => WorkerIdAssignItem.decode(testIdFormat)(item))
@@ -215,7 +202,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     val sessionExpiredAt = Instant.now().plusSeconds(1.minute.toSeconds)
     val assignItem =
       WorkerIdAssignItem(datacenterId, workerId, AssignState.Assign, host, sessionId, sessionExpiredAt)
-    client.putItem(PutItemRequest.builder().tableName(tableName).item(encode(assignItem)).build()).get()
+    dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(encode(assignItem)).build()).get()
 
     val newSessionExpiredAt = sessionExpiredAt.plusSeconds(30.seconds.toSeconds)
     val actual =
@@ -223,7 +210,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     assert(actual == HeartbeatResult.Succeeded)
 
     val expectedItem = assignItem.copy(sessionExpiredAt = newSessionExpiredAt)
-    val actualItem = client
+    val actualItem = dynamoDbClient
       .getItem(GetItemRequest.builder().tableName(tableName).key(createKeyMap(datacenterId, workerId)).build())
       .thenApply(_.item())
       .thenApply(item => WorkerIdAssignItem.decode(testIdFormat)(item))
@@ -241,7 +228,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     val sessionExpiredAt = Instant.now().plusSeconds(1.minute.toSeconds)
     val item =
       WorkerIdAssignItem(datacenterId, workerId, AssignState.PreAssign, host, sessionId, sessionExpiredAt)
-    client.putItem(PutItemRequest.builder().tableName(tableName).item(encode(item)).build()).get()
+    dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(encode(item)).build()).get()
 
     val newSessionExpiredAt = sessionExpiredAt.plusSeconds(30.seconds.toSeconds)
     operator.heartbeat(datacenterId, workerId, sessionId, newSessionExpiredAt).futureValue(1.seconds.timeout) match {
@@ -250,7 +237,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     }
 
     val expectedItem = item
-    val actualItem = client
+    val actualItem = dynamoDbClient
       .getItem(GetItemRequest.builder().tableName(tableName).key(createKeyMap(datacenterId, workerId)).build())
       .thenApply(_.item())
       .thenApply(item => WorkerIdAssignItem.decode(testIdFormat)(item))
@@ -268,7 +255,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     val sessionExpiredAt = Instant.now().plusSeconds(1.minute.toSeconds)
     val assignItem =
       WorkerIdAssignItem(datacenterId, workerId, AssignState.Assign, host, sessionId, sessionExpiredAt)
-    client.putItem(PutItemRequest.builder().tableName(tableName).item(encode(assignItem)).build()).get()
+    dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(encode(assignItem)).build()).get()
 
     val newSessionExpiredAt = sessionExpiredAt.plusSeconds(30.seconds.toSeconds)
     val differentSessionId  = UUID.randomUUID()
@@ -280,7 +267,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     }
 
     val expectedItem = assignItem
-    val actualItem = client
+    val actualItem = dynamoDbClient
       .getItem(GetItemRequest.builder().tableName(tableName).key(createKeyMap(datacenterId, workerId)).build())
       .thenApply(_.item())
       .thenApply(item => WorkerIdAssignItem.decode(testIdFormat)(item))
@@ -298,7 +285,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     val sessionExpiredAt = Instant.now().minusSeconds(1.minute.toSeconds)
     val assignItem =
       WorkerIdAssignItem(datacenterId, workerId, AssignState.Assign, host, sessionId, sessionExpiredAt)
-    client.putItem(PutItemRequest.builder().tableName(tableName).item(encode(assignItem)).build()).get()
+    dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(encode(assignItem)).build()).get()
 
     val newSessionExpiredAt = sessionExpiredAt.plusSeconds(30.seconds.toSeconds)
     operator.heartbeat(datacenterId, workerId, sessionId, newSessionExpiredAt).futureValue(1.seconds.timeout) match {
@@ -307,7 +294,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
     }
 
     val expectedItem = assignItem
-    val actualItem = client
+    val actualItem = dynamoDbClient
       .getItem(GetItemRequest.builder().tableName(tableName).key(createKeyMap(datacenterId, workerId)).build())
       .thenApply(_.item())
       .thenApply(item => WorkerIdAssignItem.decode(testIdFormat)(item))

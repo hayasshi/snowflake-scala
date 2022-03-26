@@ -2,17 +2,14 @@ package com.github.hayasshi.snowflake.scala.akka.dynamodb
 
 import akka.actor.ActorSystem
 import akka.testkit.{ ImplicitSender, TestKit }
-import com.dimafeng.testcontainers.GenericContainer
 import com.github.hayasshi.snowflake.scala.core.IdFormat
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.concurrent.PatienceConfiguration.Timeout
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.funsuite.AnyFunSuiteLike
 import org.scalatest.time.{ Millis, Span }
-import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import software.amazon.awssdk.services.dynamodb.model.*
 
-import java.net.URI
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -30,24 +27,12 @@ class WorkerIdAssignerTest
     def timeout: Timeout = Timeout(Span(duration.toMillis, Millis))
   }
 
-  val dynamoDbPortOrigin = 8000
-
-  val dynamoDbContainer: GenericContainer = GenericContainer(
-    "amazon/dynamodb-local:1.18.0",
-    exposedPorts = Seq(dynamoDbPortOrigin)
-  )
-  dynamoDbContainer.start()
-
-  val dynamoDbHost: String = dynamoDbContainer.containerIpAddress
-  val dynamoDbPort: Int    = dynamoDbContainer.mappedPort(dynamoDbPortOrigin)
+  val dynamoDbSupport = new DynamoDbLocalContainerSupport()
 
   override def afterAll(): Unit = {
-    dynamoDbContainer.stop()
+    dynamoDbSupport.close()
     super.afterAll()
   }
-
-  val client: DynamoDbAsyncClient =
-    DynamoDbAsyncClient.builder().endpointOverride(URI.create(s"http://$dynamoDbHost:$dynamoDbPort")).build()
 
   val tableName = "TestTable"
 
@@ -65,10 +50,10 @@ class WorkerIdAssignerTest
         KeySchemaElement.builder().keyType(KeyType.RANGE).attributeName(SortKeyName).build()
       )
       .build()
-    println(client.createTable(request).get())
+    println(dynamoDbSupport.client.createTable(request).get())
   }
 
-  val operator = new WorkerIdAssignDynamoDbOperator(client, tableName)
+  val operator = new WorkerIdAssignDynamoDbOperator(dynamoDbSupport.client, tableName)
 
   val testIdFormat: IdFormat = IdFormat(
     datacenterIdBits = 8,
