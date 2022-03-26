@@ -30,23 +30,7 @@ class WorkerIdAssignDynamoDbOperatorTest extends AnyFunSuite with ScalaFutures w
   }
 
   val tableName = "TestTable"
-
-  {
-    val request = CreateTableRequest
-      .builder()
-      .tableName(tableName)
-      .billingMode(BillingMode.PAY_PER_REQUEST)
-      .attributeDefinitions(
-        AttributeDefinition.builder().attributeType(ScalarAttributeType.N).attributeName(PartitionKeyName).build(),
-        AttributeDefinition.builder().attributeType(ScalarAttributeType.N).attributeName(SortKeyName).build()
-      )
-      .keySchema(
-        KeySchemaElement.builder().keyType(KeyType.HASH).attributeName(PartitionKeyName).build(),
-        KeySchemaElement.builder().keyType(KeyType.RANGE).attributeName(SortKeyName).build()
-      )
-      .build()
-    println(dynamoDbClient.createTable(request).get())
-  }
+  dynamoDbClient.createTable(createTableRequest(tableName, BillingMode.PAY_PER_REQUEST, None)).get()
 
   val operator = new WorkerIdAssignDynamoDbOperator(dynamoDbClient, tableName)
 

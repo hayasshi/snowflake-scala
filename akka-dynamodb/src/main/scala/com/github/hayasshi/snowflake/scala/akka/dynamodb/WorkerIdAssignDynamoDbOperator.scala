@@ -1,7 +1,6 @@
 package com.github.hayasshi.snowflake.scala.akka.dynamodb
 
 import com.github.hayasshi.snowflake.scala.akka.dynamodb.WorkerIdAssignDynamoDbOperator.unwrapIfCompletionException
-import com.github.hayasshi.snowflake.scala.core.IdFormat
 import com.github.hayasshi.snowflake.scala.core.IdFormat.{ DatacenterId, WorkerId }
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import software.amazon.awssdk.services.dynamodb.model.*
@@ -10,7 +9,7 @@ import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CompletionException
 import scala.concurrent.{ ExecutionContext, Future }
-import scala.jdk.CollectionConverters.{ MapHasAsJava, MapHasAsScala }
+import scala.jdk.CollectionConverters.MapHasAsJava
 import scala.jdk.FutureConverters.CompletionStageOps
 import scala.util.control.NonFatal
 
@@ -43,73 +42,6 @@ sealed trait HeartbeatResult
 object HeartbeatResult {
   case object Succeeded               extends HeartbeatResult
   case class Failed(cause: Throwable) extends HeartbeatResult
-}
-
-case class DecodingFailure(message: String, cause: Option[Throwable] = None) extends Exception(message, cause.orNull)
-
-case class WorkerIdAssignItem(
-    datacenterId: DatacenterId,
-    workerId: WorkerId,
-    state: AssignState,
-    host: String,
-    sessionId: UUID,
-    sessionExpiredAt: Instant
-)
-
-object WorkerIdAssignItem {
-  val PartitionKeyName         = "DatacenterId"
-  val SortKeyName              = "WorkerId"
-  val AttrStateName            = "AssignState"
-  val AttrHostName             = "Host"
-  val AttrSessionIdName        = "SessionId"
-  val AttrSessionExpiredAtName = "SessionExpiredAt"
-
-  def createKeyMap(datacenterId: DatacenterId, workerId: WorkerId): java.util.Map[String, AttributeValue] =
-    Map(
-      PartitionKeyName -> AttributeValue.builder().n(datacenterId.value.toString).build(),
-      SortKeyName      -> AttributeValue.builder().n(workerId.value.toString).build()
-    ).asJava
-
-  def encode(item: WorkerIdAssignItem): java.util.Map[String, AttributeValue] = Map(
-    PartitionKeyName         -> AttributeValue.builder().n(item.datacenterId.value.toString).build(),
-    SortKeyName              -> AttributeValue.builder().n(item.workerId.value.toString).build(),
-    AttrStateName            -> AttributeValue.builder().s(item.state.asString).build(),
-    AttrHostName             -> AttributeValue.builder().s(item.host).build(),
-    AttrSessionIdName        -> AttributeValue.builder().s(item.sessionId.toString).build(),
-    AttrSessionExpiredAtName -> AttributeValue.builder().n(item.sessionExpiredAt.toEpochMilli.toString).build()
-  ).asJava
-
-  def decode(
-      idFormat: IdFormat
-  )(itemMap: java.util.Map[String, AttributeValue]): Either[DecodingFailure, WorkerIdAssignItem] = {
-    val map = itemMap.asScala
-    val result = for {
-      datacenterId <- map.get(PartitionKeyName).toRight(DecodingFailure(s"`$PartitionKeyName` is not exists."))
-      workerId     <- map.get(SortKeyName).toRight(DecodingFailure(s"`$SortKeyName` is not exists."))
-      state        <- map.get(AttrStateName).toRight(DecodingFailure(s"`$AttrStateName` is not exists."))
-      host         <- map.get(AttrHostName).toRight(DecodingFailure(s"`$AttrHostName` is not exists."))
-      sessionId    <- map.get(AttrSessionIdName).toRight(DecodingFailure(s"`$AttrSessionIdName` is not exists."))
-      sessionExpiredAt <- map
-        .get(AttrSessionExpiredAtName)
-        .toRight(DecodingFailure(s"`$AttrSessionExpiredAtName` is not exists."))
-    } yield {
-      try {
-        Right(
-          WorkerIdAssignItem(
-            idFormat.datacenterId(datacenterId.n().toLong),
-            idFormat.workerId(workerId.n().toLong),
-            AssignState.from(state.s()),
-            host.s(),
-            UUID.fromString(sessionId.s()),
-            Instant.ofEpochMilli(sessionExpiredAt.n().toLong)
-          )
-        )
-      } catch {
-        case NonFatal(e) => Left(DecodingFailure(e.getMessage, Some(e)))
-      }
-    }
-    result.flatten
-  }
 }
 
 object WorkerIdAssignDynamoDbOperator {

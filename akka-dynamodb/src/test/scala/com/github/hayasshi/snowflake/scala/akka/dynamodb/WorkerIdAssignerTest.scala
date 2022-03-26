@@ -35,23 +35,7 @@ class WorkerIdAssignerTest
   }
 
   val tableName = "TestTable"
-
-  {
-    val request = CreateTableRequest
-      .builder()
-      .tableName(tableName)
-      .billingMode(BillingMode.PAY_PER_REQUEST)
-      .attributeDefinitions(
-        AttributeDefinition.builder().attributeType(ScalarAttributeType.N).attributeName(PartitionKeyName).build(),
-        AttributeDefinition.builder().attributeType(ScalarAttributeType.N).attributeName(SortKeyName).build()
-      )
-      .keySchema(
-        KeySchemaElement.builder().keyType(KeyType.HASH).attributeName(PartitionKeyName).build(),
-        KeySchemaElement.builder().keyType(KeyType.RANGE).attributeName(SortKeyName).build()
-      )
-      .build()
-    println(dynamoDbSupport.client.createTable(request).get())
-  }
+  dynamoDbSupport.client.createTable(createTableRequest(tableName, BillingMode.PAY_PER_REQUEST, None)).get()
 
   val operator = new WorkerIdAssignDynamoDbOperator(dynamoDbSupport.client, tableName)
 
