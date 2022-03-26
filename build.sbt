@@ -50,6 +50,7 @@ lazy val akkaDynamoDb = (project in file("akka-dynamodb"))
       akka,
       awsSdkDynamoDb,
       scalaTest           % Test,
-      testcontainersScala % Test
+      testcontainersScala % Test,
+      akkaTestkit         % Test
     )
   )
