@@ -16,6 +16,8 @@ object Dependencies {
 
   lazy val akka = "com.typesafe.akka" %% "akka-actor" % Version.akka
 
+  lazy val akkaTestkit = "com.typesafe.akka" %% "akka-testkit" % Version.akka
+
   lazy val awsSdkDynamoDb = "software.amazon.awssdk" % "dynamodb" % Version.awsSdk
 
   lazy val testcontainersScala = "com.dimafeng" %% "testcontainers-scala" % Version.testcontainersScala
