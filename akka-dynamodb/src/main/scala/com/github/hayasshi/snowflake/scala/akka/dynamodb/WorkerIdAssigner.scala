@@ -8,18 +8,7 @@ import com.github.hayasshi.snowflake.scala.core.IdFormat.{ DatacenterId, WorkerI
 import java.time.Instant
 import java.util.UUID
 import scala.concurrent.ExecutionContextExecutor
-import scala.concurrent.duration.FiniteDuration
 import scala.util.Random
-
-case class WorkerIdAssignerSettings(
-    idFormat: IdFormat,
-    datacenterId: DatacenterId,
-    operator: WorkerIdAssignDynamoDbOperator,
-    host: String,
-    sessionDuration: FiniteDuration,
-    safeWaitDuration: FiniteDuration,
-    heartbeatInterval: FiniteDuration
-)
 
 object WorkerIdAssigner {
 
@@ -48,19 +37,31 @@ object WorkerIdAssigner {
 
   }
 
-  def props(settings: WorkerIdAssignerSettings): Props =
-    Props(new WorkerIdAssigner(settings))
+  def props(
+      idFormat: IdFormat,
+      datacenterId: DatacenterId,
+      operator: WorkerIdAssignDynamoDbOperator,
+      settings: WorkerIdAssignerSettings
+  ): Props =
+    Props(new WorkerIdAssigner(idFormat, datacenterId, operator, settings))
 
 }
 
-final class WorkerIdAssigner private (settings: WorkerIdAssignerSettings) extends Actor with ActorLogging {
+final class WorkerIdAssigner private (
+    idFormat: IdFormat,
+    datacenterId: DatacenterId,
+    operator: WorkerIdAssignDynamoDbOperator,
+    settings: WorkerIdAssignerSettings
+) extends Actor
+    with ActorLogging {
+
   import WorkerIdAssigner.Protocol.External.*
   import WorkerIdAssigner.Protocol.Internal.*
 
   val workerId: WorkerId = {
     // TODO: Check and set the id that is not assigned to DynamoDB
-    val id = Random.nextLong(0x0001L << settings.idFormat.workerIdBits)
-    settings.idFormat.workerId(id)
+    val id = Random.nextLong(0x0001L << idFormat.workerIdBits)
+    idFormat.workerId(id)
   }
   context.self ! PreAssign(workerId)
 
@@ -81,9 +82,9 @@ final class WorkerIdAssigner private (settings: WorkerIdAssignerSettings) extend
   def preAssign: Receive = {
     case PreAssign(id) =>
       log.info("Start to pre-assign at {}", id)
-      settings.operator
+      operator
         .putForPreAssign(
-          settings.datacenterId,
+          datacenterId,
           id,
           settings.host,
           sessionId,
@@ -113,8 +114,8 @@ final class WorkerIdAssigner private (settings: WorkerIdAssignerSettings) extend
   def assign: Receive = {
     case Assign =>
       log.info("Start to assign at {}", workerId)
-      settings.operator
-        .updateForAssign(settings.datacenterId, workerId, sessionId, createSessionExpiredAt())
+      operator
+        .updateForAssign(datacenterId, workerId, sessionId, createSessionExpiredAt())
         .map {
           case AssignResult.Succeeded => SucceededAssign
           case AssignResult.Failed(e) => FailedAssign(e)
@@ -137,8 +138,8 @@ final class WorkerIdAssigner private (settings: WorkerIdAssignerSettings) extend
 
   def ready: Receive = {
     case Heartbeat =>
-      settings.operator
-        .heartbeat(settings.datacenterId, workerId, sessionId, createSessionExpiredAt())
+      operator
+        .heartbeat(datacenterId, workerId, sessionId, createSessionExpiredAt())
         .map {
           case HeartbeatResult.Succeeded => SucceededHeartbeat
           case HeartbeatResult.Failed(e) => FailedHeartbeat(e)
