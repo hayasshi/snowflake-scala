@@ -43,12 +43,14 @@ lazy val core = (project in file("core"))
 
 lazy val akkaDynamoDb = (project in file("akka-dynamodb"))
   .settings(commonSettings)
+  .dependsOn(core)
   .settings(
     name := "snowflake-scala-akka-dynamodb",
     libraryDependencies ++= Seq(
       akka,
       awsSdkDynamoDb,
       scalaTest           % Test,
-      testcontainersScala % Test
+      testcontainersScala % Test,
+      akkaTestkit         % Test
     )
   )
